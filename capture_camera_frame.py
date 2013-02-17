@@ -8,13 +8,22 @@ class LaserService:
     self.laser_service = msgpackrpc.Client(msgpackrpc.Address(host, port))
     
   def on(self):
-    self.laser_service.call("on")
+    try:
+      self.laser_service.call("on")
+    except msgpackrpc.error.TimeoutError:
+      pass
     
   def off(self):
-    self.laser_service.call("off")
+    try:
+      self.laser_service.call("off")
+    except msgpackrpc.error.TimeoutError:
+      pass
   
   def cleanup(self):
-    self.laser_service.call("cleanup")
+    try:
+      self.laser_service.call("cleanup")
+    except msgpackrpc.error.TimeoutError:
+      pass
 
 class RangeFinder:
   def __init__(self, laser_service):
@@ -30,10 +39,12 @@ class RangeFinder:
 
   def compute_distance_from_frame(self, image):
     pixel_distance_from_center_screen = self.find_red_dot(image)
+    distance_in_feet = 50
     return 50
 
   def find_red_dot(self, image):
     red_image, green_image, blue_image = cv2.split(image)
+    return 17
 
 class LiveVideoStream:
   def __init__(self, camera_index = 0, window_name = "Live Video", cleanup_fn = None, key_press_event_handler = None, mouse_event_handler = None):
@@ -168,7 +179,7 @@ class TurretController:
       def image_capture_fn():
         frame = self.video.capture_image(self.video.camera)
         self.video.save_image(frame, "rangefind.jpg")
-        frame
+        return frame
       distance = self.range_finder.compute_distance(image_capture_fn)
       print "Distance to target: %s" % distance
     elif key == 13:     # enter
