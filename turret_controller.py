@@ -2,6 +2,7 @@ import cv2
 import msgpackrpc   # see: https://github.com/msgpack-rpc/msgpack-rpc-python
 import sys
 import time
+import numpy
 
 class LaserService:
   def __init__(self, host = "localhost", port = 10):
@@ -34,17 +35,35 @@ class RangeFinder:
     time.sleep(0.2)   # it takes a short moment for the laser to turn on
     captured_frame = capture_frame_fn()
     self.laser_service.off()
-    distance = self.compute_distance_from_frame(captured_frame)
+    # distance = self.compute_distance_from_frame(captured_frame)
+    distance = 50
     return distance
 
   def compute_distance_from_frame(self, image):
-    pixel_distance_from_center_screen = self.find_red_dot(image)
+    (x, y) = self.find_red_dot_coords(image)
     distance_in_feet = 50
     return 50
 
-  def find_red_dot(self, image):
-    red_image, green_image, blue_image = cv2.split(image)
-    return 17
+  def find_red_dot_coords(self, image):
+    rows = image.shape[0]
+    cols = image.shape[1]
+    max_red_coord = (0, 0)
+    blue, green, max_red_value = image[0][0]
+    
+    for row in range(rows):
+      for col in range(cols):
+        x, y = col, row
+        pixel = image[row][col]
+        blue, green, red = pixel
+        
+        # TODO: need to make this smarter, so that it checks the surrounding pixels and concludes that 
+        #       a #fff value is "red" if it is sufficiently surrounded by red pixels
+        # red must be 50% brighter than the blue and 50% brighter than the green
+        if red >= round(blue * 1.50) and red >= round(green * 1.50) and red > max_red_value:
+          max_red_coord = (x, y)
+          max_red_value = red
+
+    return max_red_coord
 
 class LiveVideoStream:
   def __init__(self, camera_index = 0, window_name = "Live Video", cleanup_fn = None, key_press_event_handler = None, mouse_event_handler = None):
@@ -56,6 +75,9 @@ class LiveVideoStream:
     self.cleanup_fn = cleanup_fn
     self.key_press_event_handler = key_press_event_handler
     self.mouse_event_handler = mouse_event_handler
+
+  def add_click_point(self, point):
+    self.click_points.append(point)
 
   def cleanup(self):
     if self.cleanup_fn is not None:
@@ -87,13 +109,13 @@ class LiveVideoStream:
   #   # self.display_image(image2)
   #   # c = cv2.cv.WaitKey()
 
-  # returns an image object
+  # returns a BGR-image matrix
   def capture_image(self, camera = None):
     if camera is None:
       camera = self.camera
 
     if camera is not None:
-      status, img = camera.read()
+      status, img = camera.read()   # returns a BGR-image matrix
       return img
     else:
       return None
@@ -110,8 +132,15 @@ class LiveVideoStream:
   
     is_camera_open = camera.isOpened()
     while is_camera_open:
-      is_camera_open, self.current_frame = camera.read()
+      is_camera_open, self.current_frame = camera.read()   # returns a BGR-image matrix
       # print self.current_frame.shape
+      
+      # blue_ch, green_ch, red_ch = cv2.split(self.current_frame)
+      # blueimg = numpy.zeros((self.current_frame.shape[0], self.current_frame.shape[1]), dtype=self.current_frame.dtype)
+      # greenimg = blueimg
+      # redimg = red_ch
+      # self.current_frame = cv2.merge([blueimg, greenimg, redimg])
+      
       self.redraw_click_points()
       cv2.imshow(self.window_name, self.current_frame)
       if self.capture_key_press() < 0:
@@ -129,6 +158,7 @@ class LiveVideoStream:
   def on_mouse_down(self, event, x, y, flags, param):
     if event == 1:     # left click
       self.click_points.append((x, y))
+      print "pixel at (%s, %s) = %s" % (x, y, self.current_frame[y][x])
     elif event == 2:   # right click
       del self.click_points[:]
 
@@ -180,8 +210,15 @@ class TurretController:
         frame = self.video.capture_image(self.video.camera)
         self.video.save_image(frame, "rangefind.jpg")
         return frame
-      distance = self.range_finder.compute_distance(image_capture_fn)
-      print "Distance to target: %s" % distance
+      # distance = self.range_finder.compute_distance(image_capture_fn)
+      # print "Distance to target: %s" % distance
+    elif key == 97:     # a
+      pass
+    elif key == 102:    # f
+      frame = self.video.capture_image(self.video.camera)
+      coords = self.range_finder.find_red_dot_coords(frame)
+      self.video.add_click_point(coords)
+      print "coords: (x=%s, y=%s)" % coords
     elif key == 13:     # enter
       print "fire gun!"
     
