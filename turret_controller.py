@@ -104,32 +104,19 @@ class RangeFinder:
     return (rect_image, top_left)
 
   def find_red_dot_circles(self, image):
-    # blue_ch, green_ch, red_ch = cv2.split(image)
-    
-    # height, width = 9, 9
-    # blue_ch = np.zeros((height, width), np.uint8)
-    # green_ch = blue_ch
-    # template = np.array([[230, 230, 230, 230, 230, 230, 230, 230, 230], 
-    #                      [230, 240, 240, 240, 240, 240, 240, 240, 230],
-    #                      [230, 240, 240, 240, 240, 240, 240, 240, 230],
-    #                      [230, 240, 240, 255, 255, 255, 240, 240, 230],
-    #                      [230, 240, 240, 255, 255, 255, 240, 240, 230],
-    #                      [230, 240, 240, 255, 255, 255, 240, 240, 230],
-    #                      [230, 240, 240, 240, 240, 240, 240, 240, 230],
-    #                      [230, 240, 240, 240, 240, 240, 240, 240, 230],
-    #                      [230, 230, 230, 230, 230, 230, 230, 230, 230]], np.uint8)
-    # template = self.current_frame = cv2.merge([blue_ch, green_ch, red_ch])  # 9x9
-    
     rect_region, coord_offset = self.extract_laser_channel_rect(image)
     
-    template = cv2.imread("laserdot.png")
+    template = cv2.imread("laserdotbrown.png")
+    template_rows = template.shape[0]
+    template_cols = template.shape[1]
+    
     result = cv2.matchTemplate(rect_region, template, cv2.TM_CCOEFF_NORMED)
-    # result = cv2.matchTemplate(red_ch, template, cv2.TM_CCOEFF_NORMED)
     # normal_result = cv2.normalize(result, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=-1)
     minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(result)
     match_rect_top_left = maxLoc    # For SQDIFF and SQDIFF_NORMED, the best matches are lower values. For all the other methods, the higher the better
     
-    circle = (coord_offset[0] + match_rect_top_left[0] + 5, coord_offset[1] + match_rect_top_left[1] + 5)
+    circle = (coord_offset[0] + match_rect_top_left[0] + (template_cols / 2), 
+              coord_offset[1] + match_rect_top_left[1] + (template_rows / 2))
     return [circle]
 
 class LiveVideoStream:
