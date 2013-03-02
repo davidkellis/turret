@@ -3,6 +3,7 @@ import msgpackrpc   # see: https://github.com/msgpack-rpc/msgpack-rpc-python
 import sys
 import time
 import numpy as np
+import image_utils as img
 
 class LaserService:
   def __init__(self, host = "localhost", port = 10):
@@ -75,6 +76,32 @@ class RangeFinder:
   #   # print "circles="
   #   # print circles
   #   return circles
+  
+  # extracts a rectangular sub-region of the image where: 
+  # the top-left of the rectangle is 10 pixels to the left of the image's center point
+  # the bottom-right of the rectangle is the bottom-most pixel in the image appearing 10 pixels to the right of the image's center point
+  def extract_laser_channel_rect(self, image):
+    rows = image.shape[0]
+    
+    # since the Logitech C270 resolution is 1280x960, the center point will never be exact, 
+    # it will be offset to the left and up by 1 px in both directions
+    x, y = img.center_point(image)
+    
+    rect_width = 20   # width must be even
+    rect_half_width = rect_width / 2
+    
+    # top-left and bottom-right are (x,y) coordinate pairs where the top-left of the image is the origin (0,0)
+    top_left = (x - (rect_half_width - 1), y)
+    bottom_right = (x + rect_half_width, rows - 1)
+    
+    # image is a matrix, so we extract the rows and columns we want (which we derive from the x,y coordinate range)
+    top_row_index = top_left[1]
+    left_col_index = top_left[0]
+    right_col_index = bottom_right[0] + 1   # + 1 because the : operator includes the min and excludes the max
+    rect_image = image[top_row_index : , left_col_index : right_col_index]
+    # img.save_image(rect_image, "rect.jpg")
+    
+    return (rect_image, top_left)
 
   def find_red_dot_circles(self, image):
     # blue_ch, green_ch, red_ch = cv2.split(image)
@@ -93,15 +120,16 @@ class RangeFinder:
     #                      [230, 230, 230, 230, 230, 230, 230, 230, 230]], np.uint8)
     # template = self.current_frame = cv2.merge([blue_ch, green_ch, red_ch])  # 9x9
     
+    rect_region, coord_offset = self.extract_laser_channel_rect(image)
+    
     template = cv2.imread("laserdot.png")
-    result = cv2.matchTemplate(image, template, cv2.TM_CCOEFF_NORMED)
+    result = cv2.matchTemplate(rect_region, template, cv2.TM_CCOEFF_NORMED)
     # result = cv2.matchTemplate(red_ch, template, cv2.TM_CCOEFF_NORMED)
     # normal_result = cv2.normalize(result, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=-1)
     minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(result)
     match_rect_top_left = maxLoc    # For SQDIFF and SQDIFF_NORMED, the best matches are lower values. For all the other methods, the higher the better
-    #match_rect_bottom_right = (match_rect_top_left.x + 10, match_rect_top_left.y + 10)
     
-    circle = (match_rect_top_left[0] + 5, match_rect_top_left[1] + 5)
+    circle = (coord_offset[0] + match_rect_top_left[0] + 5, coord_offset[1] + match_rect_top_left[1] + 5)
     return [circle]
 
 class LiveVideoStream:
@@ -143,12 +171,12 @@ class LiveVideoStream:
   # def capture_and_save_image(self):
   #   camera = self.get_camera(self.camera_index)
   #   image1 = self.capture_image(camera)
-  #   self.save_image(image1, "pic.jpg")
+  #   img.save_image(image1, "pic.jpg")
   #   # self.display_image(image1)
   #   # c = cv2.waitKey
   # 
   #   # image2 = self.capture_image(camera)
-  #   # # self.save_image(image, "pic.jpg")
+  #   # # img.save_image(image, "pic.jpg")
   #   # self.display_image(image2)
   #   # c = cv2.cv.WaitKey()
 
@@ -158,13 +186,10 @@ class LiveVideoStream:
       camera = self.camera
 
     if camera is not None:
-      status, img = camera.read()   # returns a BGR-image matrix
-      return img
+      status, image = camera.read()   # returns a BGR-image matrix
+      return image
     else:
       return None
-
-  def save_image(self, image, filename):
-    return cv2.imwrite(filename, image)
 
   # http://stackoverflow.com/questions/2601194/displaying-webcam-feed-using-opencv-and-python
   def display_live_video_stream(self):
@@ -256,7 +281,7 @@ class TurretController:
   def cleanup(self):
     self.laser_service.off()
     # self.laser_service.cleanup()
-
+  
   def on_key_press(self, key):
     if key == 63234:  # left
       print "left by 100 px"
@@ -272,7 +297,7 @@ class TurretController:
       print "range find!"
       def image_capture_fn():
         frame = self.video.capture_image(self.video.camera)
-        self.video.save_image(frame, "rangefind.jpg")
+        img.save_image(frame, "rangefind.jpg")
         return frame
       # distance = self.range_finder.compute_distance(image_capture_fn)
       # print "Distance to target: %s" % distance
@@ -286,8 +311,9 @@ class TurretController:
       top_left = ((cols / 2 - 1) - 10, rows / 2 - 1)
       bottom_right = ((cols / 2 - 1) + 10, rows - 1)
       self.video.add_rectangle(top_left, bottom_right)
+      # self.range_finder.extract_laser_channel_rect(image)
     elif key == 102:    # f
-      frame = self.video.capture_image(self.video.camera)
+      frame = self.video.current_frame
       circles = self.range_finder.find_red_dot_circles(frame)
       print "circles:"
       for circle in circles:
