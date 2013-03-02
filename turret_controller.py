@@ -2,7 +2,7 @@ import cv2
 import msgpackrpc   # see: https://github.com/msgpack-rpc/msgpack-rpc-python
 import sys
 import time
-import numpy
+import numpy as np
 
 class LaserService:
   def __init__(self, host = "localhost", port = 10):
@@ -43,32 +43,72 @@ class RangeFinder:
     (x, y) = self.find_red_dot_coords(image)
     distance_in_feet = 50
     return 50
+  # 
+  # def find_red_dot_coords(self, image):
+  #   rows = image.shape[0]
+  #   cols = image.shape[1]
+  #   max_red_coord = (0, 0)
+  #   blue, green, max_red_value = image[0][0]
+  #   
+  #   for row in range(rows):
+  #     for col in range(cols):
+  #       x, y = col, row
+  #       pixel = image[row][col]
+  #       blue, green, red = pixel
+  #       
+  #       # TODO: need to make this smarter, so that it checks the surrounding pixels and concludes that 
+  #       #       a #fff value is "red" if it is sufficiently surrounded by red pixels
+  #       # red must be 50% brighter than the blue and 50% brighter than the green
+  #       if red >= round(blue * 1.50) and red >= round(green * 1.50) and red > max_red_value:
+  #         max_red_coord = (x, y)
+  #         max_red_value = red
+  # 
+  #   return max_red_coord
 
-  def find_red_dot_coords(self, image):
-    rows = image.shape[0]
-    cols = image.shape[1]
-    max_red_coord = (0, 0)
-    blue, green, max_red_value = image[0][0]
+  # def find_red_dot_circles(self, image):
+  #   rows, cols, depth = image.shape
+  #   gray_img = cv2.cvtColor(image, cv2.cv.CV_BGR2GRAY)
+  #   # gray_img = cv2.GaussianBlur(gray_img, (0, 0), 2, gray_img, 2)
+  #   # circles = cv2.HoughCircles(gray_img, cv2.cv.CV_HOUGH_GRADIENT, 1, rows / 8, param1=200, param2=100, minRadius=0, maxRadius=30)
+  #   circles = cv2.HoughCircles(gray_img, cv2.cv.CV_HOUGH_GRADIENT, 1, 10, param1=50, param2=50, minRadius=0, maxRadius=50)
+  #   circles = np.uint16(np.around(circles))[0]
+  #   # print "circles="
+  #   # print circles
+  #   return circles
+
+  def find_red_dot_circles(self, image):
+    # blue_ch, green_ch, red_ch = cv2.split(image)
     
-    for row in range(rows):
-      for col in range(cols):
-        x, y = col, row
-        pixel = image[row][col]
-        blue, green, red = pixel
-        
-        # TODO: need to make this smarter, so that it checks the surrounding pixels and concludes that 
-        #       a #fff value is "red" if it is sufficiently surrounded by red pixels
-        # red must be 50% brighter than the blue and 50% brighter than the green
-        if red >= round(blue * 1.50) and red >= round(green * 1.50) and red > max_red_value:
-          max_red_coord = (x, y)
-          max_red_value = red
-
-    return max_red_coord
+    # height, width = 9, 9
+    # blue_ch = np.zeros((height, width), np.uint8)
+    # green_ch = blue_ch
+    # template = np.array([[230, 230, 230, 230, 230, 230, 230, 230, 230], 
+    #                      [230, 240, 240, 240, 240, 240, 240, 240, 230],
+    #                      [230, 240, 240, 240, 240, 240, 240, 240, 230],
+    #                      [230, 240, 240, 255, 255, 255, 240, 240, 230],
+    #                      [230, 240, 240, 255, 255, 255, 240, 240, 230],
+    #                      [230, 240, 240, 255, 255, 255, 240, 240, 230],
+    #                      [230, 240, 240, 240, 240, 240, 240, 240, 230],
+    #                      [230, 240, 240, 240, 240, 240, 240, 240, 230],
+    #                      [230, 230, 230, 230, 230, 230, 230, 230, 230]], np.uint8)
+    # template = self.current_frame = cv2.merge([blue_ch, green_ch, red_ch])  # 9x9
+    
+    template = cv2.imread("laserdot.png")
+    result = cv2.matchTemplate(image, template, cv2.TM_CCOEFF_NORMED)
+    # result = cv2.matchTemplate(red_ch, template, cv2.TM_CCOEFF_NORMED)
+    # normal_result = cv2.normalize(result, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=-1)
+    minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(result)
+    match_rect_top_left = maxLoc    # For SQDIFF and SQDIFF_NORMED, the best matches are lower values. For all the other methods, the higher the better
+    #match_rect_bottom_right = (match_rect_top_left.x + 10, match_rect_top_left.y + 10)
+    
+    circle = (match_rect_top_left[0] + 5, match_rect_top_left[1] + 5)
+    return [circle]
 
 class LiveVideoStream:
   def __init__(self, camera_index = 0, window_name = "Live Video", cleanup_fn = None, key_press_event_handler = None, mouse_event_handler = None):
     self.current_frame = None
     self.click_points = []
+    self.rectangles = []
     self.camera_index = camera_index
     self.window_name = window_name
     self.camera = None
@@ -78,6 +118,9 @@ class LiveVideoStream:
 
   def add_click_point(self, point):
     self.click_points.append(point)
+
+  def add_rectangle(self, top_left, bottom_right):
+    self.rectangles.append((top_left, bottom_right))
 
   def cleanup(self):
     if self.cleanup_fn is not None:
@@ -134,14 +177,16 @@ class LiveVideoStream:
     while is_camera_open:
       is_camera_open, self.current_frame = camera.read()   # returns a BGR-image matrix
       # print self.current_frame.shape
-      
+
+      # this block of code displays only the red channel of each video frame
       # blue_ch, green_ch, red_ch = cv2.split(self.current_frame)
-      # blueimg = numpy.zeros((self.current_frame.shape[0], self.current_frame.shape[1]), dtype=self.current_frame.dtype)
+      # blueimg = np.zeros((self.current_frame.shape[0], self.current_frame.shape[1]), dtype=self.current_frame.dtype)
       # greenimg = blueimg
       # redimg = red_ch
       # self.current_frame = cv2.merge([blueimg, greenimg, redimg])
       
       self.redraw_click_points()
+      self.redraw_rectangles()
       cv2.imshow(self.window_name, self.current_frame)
       if self.capture_key_press() < 0:
         self.cleanup()
@@ -161,14 +206,33 @@ class LiveVideoStream:
       print "pixel at (%s, %s) = %s" % (x, y, self.current_frame[y][x])
     elif event == 2:   # right click
       del self.click_points[:]
+      del self.rectangles[:]
 
   def redraw_click_points(self):
     if self.current_frame is not None:
       for point in self.click_points:
-        self.draw_circle(self.current_frame, point, 4)
+        x, y = 0, 0
+        radius = 0
+        if len(point) == 3:
+          x, y, radius = point
+        elif len(point) == 2:
+          x, y = point
+          radius = 4
+        point = (x, y)
+        self.draw_circle(self.current_frame, point, radius)
+  
+  def redraw_rectangles(self):
+    if self.current_frame is not None:
+      for rect in self.rectangles:
+        top_left = rect[0]
+        bottom_right = rect[1]
+        self.draw_rectangle(self.current_frame, top_left, bottom_right)
 
   def draw_circle(self, image, center, radius, color = (0, 0, 255), thickness = 2):
     cv2.circle(image, center, radius, color, thickness)
+  
+  def draw_rectangle(self, image, top_left, bottom_right, color = (0, 0, 255), thickness = 2):
+    cv2.rectangle(image, top_left, bottom_right, color, thickness)
 
   def capture_key_press(self):
     key = cv2.waitKey(20)
@@ -214,11 +278,22 @@ class TurretController:
       # print "Distance to target: %s" % distance
     elif key == 97:     # a
       pass
+    elif key == 114:    # r
+      # draw rect
+      image = self.video.current_frame
+      rows = image.shape[0]
+      cols = image.shape[1]
+      top_left = ((cols / 2 - 1) - 10, rows / 2 - 1)
+      bottom_right = ((cols / 2 - 1) + 10, rows - 1)
+      self.video.add_rectangle(top_left, bottom_right)
     elif key == 102:    # f
       frame = self.video.capture_image(self.video.camera)
-      coords = self.range_finder.find_red_dot_coords(frame)
-      self.video.add_click_point(coords)
-      print "coords: (x=%s, y=%s)" % coords
+      circles = self.range_finder.find_red_dot_circles(frame)
+      print "circles:"
+      for circle in circles:
+        print circle
+        self.video.add_click_point(circle)
+      # print "coords: (x=%s, y=%s)" % coords
     elif key == 13:     # enter
       print "fire gun!"
     
