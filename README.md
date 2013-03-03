@@ -1,7 +1,7 @@
 turret
 ======
 
-An app to operate a raspberry pi controlled gun turret.
+An app to operate a laptop and raspberry pi controlled gun turret.
 
 laser\_service.py and laser.py run on the Raspberry Pi. They are used to control the laser.
-In my setup, capture_camera_frame.py runs on a laptop connected to a discrete webcam and makes RPC calls to the laser service running on the RPi.
+In my setup, turret\_controller.py runs on a laptop connected to a webcam and makes RPC calls to the laser service running on the RPi.
