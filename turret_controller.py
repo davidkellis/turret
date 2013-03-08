@@ -289,7 +289,8 @@ class TurretController:
       # distance = self.range_finder.compute_distance(image_capture_fn)
       # print "Distance to target: %s" % distance
     elif key == 97:     # a
-      pass
+      frame = self.video.current_frame
+      img.save_image(frame, "frame.jpg")
     elif key == 114:    # r
       # draw rect
       image = self.video.current_frame
